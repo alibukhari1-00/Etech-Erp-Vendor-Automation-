@@ -7,3 +7,4 @@ from .vendor import Vendor
 from .vendor_group import VendorGroup
 from .vendor_brand import VendorBrand
 from .vendor_contact_person import VendorContactPerson
+from .user import User

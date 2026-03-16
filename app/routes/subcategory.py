@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.core.dependencies import get_db
 from app.schemas.subcategory import SubCategoryCreate, SubCategoryResponse
 from app.crud import subcategory as crud
 
