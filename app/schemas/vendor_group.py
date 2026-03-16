@@ -19,11 +19,6 @@ class VendorGroupBase(BaseModel):
             raise ValueError("vendor_id must be a positive integer.")
         return v
 
-    @model_validator(mode="after")
-    def validate_ids_not_equal(self) -> "VendorGroupBase":
-        if self.cat_id == self.vendor_id:
-            raise ValueError("cat_id and vendor_id cannot be the same value.")
-        return self
 
 
 class VendorGroupCreate(VendorGroupBase):
