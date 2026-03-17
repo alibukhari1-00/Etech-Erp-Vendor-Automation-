@@ -8,6 +8,7 @@ class UserBase(BaseModel):
     email: str
     username: str
     full_name: str
+    avatar_url: Optional[str] = None
     role: str = "admin"
     is_active: bool = True
 
@@ -31,8 +32,8 @@ class UserBase(BaseModel):
             raise ValueError("Username must be at least 3 characters.")
         if len(v) > 50:
             raise ValueError("Username cannot exceed 50 characters.")
-        if not re.match(r"^[a-zA-Z0-9_]+$", v):
-            raise ValueError("Username can only contain letters, numbers, and underscores.")
+        if not re.match(r"^[a-zA-Z0-9_@.-]+$", v):
+            raise ValueError("Username can only contain letters, numbers, underscores, dots, hyphens, and @.")
         return v
 
     @field_validator("full_name")
@@ -47,12 +48,28 @@ class UserBase(BaseModel):
             raise ValueError("Full name cannot exceed 100 characters.")
         return v
 
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_avatar_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > 5_000_000:
+            raise ValueError("Avatar image is too large.")
+        if v.startswith("data:image/"):
+            return v
+        if re.match(r"^https?://", v, re.IGNORECASE):
+            return v
+        raise ValueError("Avatar must be an image data URL or a valid http/https URL.")
+
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: str) -> str:
         v = v.strip().lower()
-        if v not in {"admin"}:
-            raise ValueError("Role must be 'admin'.")
+        if v not in {"admin", "purchaser"}:
+            raise ValueError("Role must be either 'admin' or 'purchaser'.")
         return v
 
 
@@ -73,9 +90,91 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     username: Optional[str] = None
     full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_optional_email(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_email(v)
+
+    @field_validator("username")
+    @classmethod
+    def validate_optional_username(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_username(v)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_optional_full_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_full_name(v)
+
+    @field_validator("role")
+    @classmethod
+    def validate_optional_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_role(v)
+
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_optional_avatar_url(cls, v: Optional[str]) -> Optional[str]:
+        return UserBase.validate_avatar_url(v)
+
+    @field_validator("password")
+    @classmethod
+    def validate_optional_password(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        return UserCreate.validate_password(v)
+
+
+class ProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    password: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_optional_email(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_email(v)
+
+    @field_validator("username")
+    @classmethod
+    def validate_optional_username(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_username(v)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_optional_full_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return UserBase.validate_full_name(v)
+
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_optional_avatar_url(cls, v: Optional[str]) -> Optional[str]:
+        return UserBase.validate_avatar_url(v)
+
+    @field_validator("password")
+    @classmethod
+    def validate_optional_password(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        return UserCreate.validate_password(v)
 
 
 class UserResponse(UserBase):

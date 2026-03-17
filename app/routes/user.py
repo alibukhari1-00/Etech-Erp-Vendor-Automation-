@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_db, get_current_user
+from app.core.dependencies import get_db, get_admin_user
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.crud import user as user_crud
 
@@ -8,7 +8,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_user(data: UserCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def create_user(data: UserCreate, db: Session = Depends(get_db), current_user=Depends(get_admin_user)):
     existing_email = user_crud.get_user_by_email(db, data.email)
     if existing_email:
         raise HTTPException(
@@ -25,7 +25,7 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), current_user=De
 
 
 @router.get("/", response_model=list[UserResponse])
-def get_users(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_users(db: Session = Depends(get_db), current_user=Depends(get_admin_user)):
     users = user_crud.get_users(db)
     if not users:
         raise HTTPException(
@@ -36,7 +36,7 @@ def get_users(db: Session = Depends(get_db), current_user=Depends(get_current_us
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(get_admin_user)):
     if user_id <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -52,7 +52,7 @@ def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(g
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), current_user=Depends(get_admin_user)):
     if user_id <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -82,7 +82,7 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_200_OK)
-def delete_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(get_admin_user)):
     if user_id <= 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

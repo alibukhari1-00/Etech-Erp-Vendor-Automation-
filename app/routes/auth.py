@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.core.dependencies import get_db, get_current_user
+from app.core.dependencies import get_db, get_current_user, is_purchaser_access_enabled
 from app.schemas.auth import LoginRequest, Token, TokenRefresh
-from app.schemas.user import UserResponse
+from app.schemas.user import ProfileUpdate, UserResponse
 from app.crud import user as user_crud
 from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token
 
@@ -26,6 +26,11 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is deactivated."
+        )
+    if user.role == "purchaser" and not is_purchaser_access_enabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Purchaser access is not enabled in the current system yet."
         )
 
     token_data = {"sub": str(user.id), "email": user.email, "role": user.role}
@@ -51,6 +56,11 @@ def refresh_token(data: TokenRefresh, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or deactivated."
         )
+    if user.role == "purchaser" and not is_purchaser_access_enabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Purchaser access is not enabled in the current system yet."
+        )
 
     token_data = {"sub": str(user.id), "email": user.email, "role": user.role}
     access_token = create_access_token(token_data)
@@ -62,3 +72,29 @@ def refresh_token(data: TokenRefresh, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user=Depends(get_current_user)):
     return current_user
+
+
+@router.put("/me", response_model=UserResponse)
+@router.patch("/me", response_model=UserResponse)
+def update_me(
+    data: ProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if data.email:
+        duplicate = user_crud.get_user_by_email(db, data.email)
+        if duplicate and duplicate.id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Another user with email '{data.email}' already exists."
+            )
+
+    if data.username:
+        duplicate = user_crud.get_user_by_username(db, data.username)
+        if duplicate and duplicate.id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Another user with username '{data.username}' already exists."
+            )
+
+    return user_crud.update_user(db, current_user.id, data)

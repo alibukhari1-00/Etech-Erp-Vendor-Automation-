@@ -161,3 +161,22 @@ class ItemResponse(ItemBase):
 
     class Config:
         from_attributes = True
+
+
+class ItemEnrichedResponse(ItemBase):
+    id: int
+    brand_name: Optional[str] = None
+    scat_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ItemSearchResult(BaseModel):
+    item_id: int
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    power_rating_kv: Optional[float] = None
+    voltage: Optional[float] = None
+    uom: Optional[str] = None

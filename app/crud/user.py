@@ -10,6 +10,7 @@ def create_user(db: Session, user: UserCreate):
         username=user.username,
         hashed_password=hash_password(user.password),
         full_name=user.full_name,
+        avatar_url=user.avatar_url,
         role=user.role,
         is_active=user.is_active
     )

@@ -4,8 +4,16 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.security import verify_token
 from app.models.user import User
+from app.models.system_setting import SystemSetting
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+def is_purchaser_access_enabled(db: Session) -> bool:
+    row = db.query(SystemSetting).filter(SystemSetting.key == "purchaser_access_enabled").first()
+    if not row:
+        return False
+    return str(row.value).strip().lower() == "true"
 
 
 def get_current_user(
@@ -42,4 +50,19 @@ def get_current_user(
             detail="User account is deactivated.",
         )
 
+    if user.role == "purchaser" and not is_purchaser_access_enabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Purchaser access is not enabled in the current system yet.",
+        )
+
     return user
+
+
+def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access is required.",
+        )
+    return current_user

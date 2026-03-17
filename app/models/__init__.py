@@ -8,3 +8,9 @@ from .vendor_group import VendorGroup
 from .vendor_brand import VendorBrand
 from .vendor_contact_person import VendorContactPerson
 from .user import User
+from .system_setting import SystemSetting
+from .project import Project
+from .purchase_demand import PurchaseDemand
+from .purchase_demand_item import PurchaseDemandItem
+from .purchase_demand_vendor import PurchaseDemandVendor
+from .log import Log

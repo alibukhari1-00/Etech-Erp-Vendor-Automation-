@@ -11,9 +11,10 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
+    avatar_url = Column(String, nullable=True)
 
     role = Column(
-        Enum("admin", name="user_role"),
+        Enum("admin", "purchaser", name="user_role"),
         default="admin",
         nullable=False
     )
