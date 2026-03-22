@@ -13,6 +13,8 @@ class VendorSuggestion(BaseModel):
     name: Optional[str] = None
     mobile: Optional[str] = None
     email: Optional[str] = None
+    address: Optional[str] = None
+    vendor_type: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -60,23 +62,29 @@ class QuotationVendorEntry(BaseModel):
     item_ids: List[int] = Field(default_factory=list)
 
 
-class PurchaseDemandVendorAssign(BaseModel):
+class PurchaseDemandItemVendorAssign(BaseModel):
+    item_id: int
     vendor_ids: List[int]
 
     @field_validator("vendor_ids")
     @classmethod
     def validate_vendor_ids(cls, v: list[int]) -> list[int]:
         if not v:
-            raise ValueError("At least one vendor must be selected.")
+            raise ValueError("At least one vendor must be selected for the item.")
         cleaned = list(dict.fromkeys(v))
         if any(vendor_id <= 0 for vendor_id in cleaned):
             raise ValueError("Vendor IDs must be positive integers.")
         return cleaned
 
 
+class PurchaseDemandVendorAssign(BaseModel):
+    assignments: List[PurchaseDemandItemVendorAssign]
+
+
 class SelectedVendorResponse(BaseModel):
     id: int
     purchase_demand_id: int
+    purchase_demand_item_id: Optional[int] = None
     vendor_id: int
     vendor_name: Optional[str] = None
 

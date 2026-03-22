@@ -9,14 +9,17 @@ class PurchaseDemandVendor(Base):
     id = Column(Integer, primary_key=True, index=True)
     purchase_demand_id = Column(Integer, ForeignKey("purchase_demands.id"), nullable=False)
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=False)
+    purchase_demand_item_id = Column(Integer, ForeignKey("purchase_demand_items.id"), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
             "purchase_demand_id",
+            "purchase_demand_item_id",
             "vendor_id",
-            name="uq_purchase_demand_vendor",
+            name="uq_purchase_demand_item_vendor",
         ),
     )
 
     demand = relationship("PurchaseDemand", back_populates="selected_vendors")
     vendor = relationship("Vendor")
+    item = relationship("PurchaseDemandItem")

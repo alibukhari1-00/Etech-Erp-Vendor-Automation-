@@ -13,4 +13,6 @@ from .project import Project
 from .purchase_demand import PurchaseDemand
 from .purchase_demand_item import PurchaseDemandItem
 from .purchase_demand_vendor import PurchaseDemandVendor
+from .purchase_quotation import PurchaseQuotation
 from .log import Log
+from .user_otp import UserOTP

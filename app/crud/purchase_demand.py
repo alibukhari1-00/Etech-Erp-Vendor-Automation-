@@ -24,9 +24,14 @@ def _next_demand_code(db: Session) -> str:
 def _purchase_demand_vendor_has_demand_column(db: Session) -> bool:
     try:
         columns = {column["name"] for column in inspect(db.bind).get_columns("purchase_demand_vendors")}
-        return "purchase_demand_id" in columns
+        if "purchase_demand_id" in columns:
+            return "purchase_demand_id"
+        elif "demand_id" in columns:
+            return "demand_id"
+        else:
+            return None
     except Exception:
-        return False
+        return None
 
 
 def _get_existing_draft_demand(
@@ -109,7 +114,8 @@ def get_purchase_demands(
     db: Session, project_id: int | None = None
 ) -> list[PurchaseDemand]:
     q = db.query(PurchaseDemand).options(
-        selectinload(PurchaseDemand.items).selectinload(PurchaseDemandItem.item),
+        selectinload(PurchaseDemand.items).selectinload(PurchaseDemandItem.item).selectinload(Item.sub_category),
+        selectinload(PurchaseDemand.items).selectinload(PurchaseDemandItem.item).selectinload(Item.brand),
         selectinload(PurchaseDemand.project),
         selectinload(PurchaseDemand.creator),
         selectinload(PurchaseDemand.approver),
@@ -123,7 +129,8 @@ def get_purchase_demand(db: Session, demand_id: int) -> PurchaseDemand | None:
     return (
         db.query(PurchaseDemand)
         .options(
-            selectinload(PurchaseDemand.items).selectinload(PurchaseDemandItem.item),
+            selectinload(PurchaseDemand.items).selectinload(PurchaseDemandItem.item).selectinload(Item.sub_category),
+            selectinload(PurchaseDemand.items).selectinload(PurchaseDemandItem.item).selectinload(Item.brand),
             selectinload(PurchaseDemand.project),
             selectinload(PurchaseDemand.creator),
             selectinload(PurchaseDemand.approver),
@@ -255,18 +262,36 @@ def delete_purchase_demand(db: Session, demand: PurchaseDemand) -> None:
 # ── Vendor suggestions ────────────────────────────────────────────────────────
 
 def get_suggested_vendors_for_item(db: Session, item_id: int) -> list[Vendor]:
-    """Return vendors mapped to the brand of the given item via vendor_brands."""
+    """Return vendors matching the item by brand OR sub-category."""
     item = db.query(Item).filter(Item.id == item_id).first()
-    if not item or not item.brand_id:
+    if not item:
         return []
-    vendor_ids = [
-        vb.vendor_id
-        for vb in db.query(VendorBrand)
-        .filter(VendorBrand.brand_id == item.brand_id)
-        .all()
-    ]
+    
+    vendor_ids: set[int] = set()
+    
+    # 1. By Brand
+    if item.brand_id:
+        vendor_ids.update(
+            vb.vendor_id
+            for vb in db.query(VendorBrand)
+            .filter(VendorBrand.brand_id == item.brand_id)
+            .all()
+        )
+        
+    # 2. By SubCategory -> Category -> VendorGroup
+    if item.scat_id:
+        scat = db.query(SubCategory).filter(SubCategory.id == item.scat_id).first()
+        if scat and scat.cat_id:
+            vendor_ids.update(
+                vg.vendor_id
+                for vg in db.query(VendorGroup)
+                .filter(VendorGroup.cat_id == scat.cat_id)
+                .all()
+            )
+            
     if not vendor_ids:
         return []
+        
     return db.query(Vendor).filter(Vendor.id.in_(vendor_ids)).all()
 
 
@@ -356,68 +381,86 @@ def get_vendors_for_item_model(db: Session, item) -> list[dict]:
 def assign_vendors_to_demand(
     db: Session,
     demand: PurchaseDemand,
-    vendor_ids: list[int],
+    assignments: list, # List of PurchaseDemandItemVendorAssign objects (schemas)
 ) -> list[PurchaseDemandVendor]:
-    """Replace the selected-vendor list for a demand (brand + category matched)."""
-    if not _purchase_demand_vendor_has_demand_column(db):
+    """Replace the selected-vendor list for a demand with per-item assignments."""
+    demand_col = _purchase_demand_vendor_has_demand_column(db)
+    if not demand_col:
         return []
 
-    # Build allowed set: vendors matching any item by brand OR category
-    item_rows = (
-        db.query(Item).filter(Item.id.in_([line.item_id for line in demand.items])).all()
-        if demand.items else []
-    )
-    allowed_vendor_ids: set[int] = set()
-    for item_row in item_rows:
-        for profile in get_vendors_for_item_model(db, item_row):
-            allowed_vendor_ids.add(profile["vendor_id"])
+    # 1. Clear existing assignments
+    filter_kwargs = {demand_col: demand.id}
+    db.query(PurchaseDemandVendor).filter_by(**filter_kwargs).delete(synchronize_session="fetch")
 
-    invalid = [v for v in vendor_ids if v not in allowed_vendor_ids]
-    if invalid:
-        raise ValueError(
-            f"Vendor IDs not matched to this demand's items: {', '.join(map(str, invalid))}"
-        )
+    new_rows: list[PurchaseDemandVendor] = []
+    
+    # 2. Process each per-item assignment
+    for assign in assignments:
+        item_id = assign.item_id
+        vendor_ids = assign.vendor_ids
 
-    db.query(PurchaseDemandVendor).filter(
-        PurchaseDemandVendor.purchase_demand_id == demand.id
-    ).delete(synchronize_session="fetch")
+        # Validate item belongs to demand
+        demand_item = db.query(PurchaseDemandItem).filter(
+            PurchaseDemandItem.id == item_id,
+            PurchaseDemandItem.purchase_demand_id == demand.id
+        ).first()
+        if not demand_item:
+            raise ValueError(f"Item ID {item_id} does not belong to demand {demand.demand_code}.")
 
-    rows: list[PurchaseDemandVendor] = []
-    for vendor_id in vendor_ids:
-        row = PurchaseDemandVendor(
-            purchase_demand_id=demand.id,
-            vendor_id=vendor_id,
-        )
-        db.add(row)
-        rows.append(row)
+        # Get allowed vendors for this specific item (brand/category match)
+        item_model = db.query(Item).filter(Item.id == demand_item.item_id).first()
+        allowed_profiles = get_vendors_for_item_model(db, item_model)
+        allowed_ids = {p["vendor_id"] for p in allowed_profiles}
+
+        # Check for invalid vendors for this item
+        invalid = [v for v in vendor_ids if v not in allowed_ids]
+        if invalid:
+            raise ValueError(
+                f"Vendor IDs {', '.join(map(str, invalid))} are not allowed for Item {item_model.name} (Category/Brand mismatch)."
+            )
+
+        # 3. Create the new assignments
+        for v_id in vendor_ids:
+            row_kwargs = {
+                demand_col: demand.id,
+                "purchase_demand_item_id": item_id,
+                "vendor_id": v_id,
+            }
+            row = PurchaseDemandVendor(**row_kwargs)
+            db.add(row)
+            new_rows.append(row)
 
     db.commit()
-    for row in rows:
+    for row in new_rows:
         db.refresh(row)
-    return rows
+    return new_rows
 
 
 def get_selected_vendors_for_demand(
     db: Session, demand_id: int
 ) -> list[PurchaseDemandVendor]:
-    if not _purchase_demand_vendor_has_demand_column(db):
+    demand_col = _purchase_demand_vendor_has_demand_column(db)
+    if not demand_col:
         return []
 
+    filter_kwargs = {demand_col: demand_id}
     return (
         db.query(PurchaseDemandVendor)
-        .filter(PurchaseDemandVendor.purchase_demand_id == demand_id)
+        .filter_by(**filter_kwargs)
         .order_by(PurchaseDemandVendor.id.asc())
         .all()
     )
 
 
 def has_selected_vendors_for_demand(db: Session, demand_id: int) -> bool:
-    if not _purchase_demand_vendor_has_demand_column(db):
+    demand_col = _purchase_demand_vendor_has_demand_column(db)
+    if not demand_col:
         return False
 
+    filter_kwargs = {demand_col: demand_id}
     count = (
         db.query(PurchaseDemandVendor)
-        .filter(PurchaseDemandVendor.purchase_demand_id == demand_id)
+        .filter_by(**filter_kwargs)
         .count()
     )
     return count > 0

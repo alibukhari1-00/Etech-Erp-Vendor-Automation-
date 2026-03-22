@@ -61,21 +61,35 @@ def _enrich(
     for di in demand.items:
         vendors = pd_crud.get_suggested_vendors_for_item(db, di.item_id) if include_suggested_vendors else []
         
-        # Enrich item with brand and category names
+        # ── Item Enrichment & Self-Healing Logic ──
         item_brief = None
         if di.item:
+            # Resolve Brand Name (Map -> Object -> Fallback)
+            b_name = brand_map.get(di.item.brand_id) or (di.item.brand.name if di.item.brand else "Generic Brand")
+            # Resolve Sub-Category Name (Map -> Object -> Fallback)
+            s_name = scat_map.get(di.item.scat_id) or (di.item.sub_category.name if di.item.sub_category else "Uncategorized")
+            
             item_brief = ItemBrief(
                 id=di.item.id,
                 brand_id=di.item.brand_id,
-                brand_name=brand_map.get(di.item.brand_id),
+                brand_name=b_name,
                 scat_id=di.item.scat_id,
-                scat_name=scat_map.get(di.item.scat_id),
+                scat_name=s_name,
                 power_rating_kv=di.item.power_rating_kv,
                 voltage=di.item.voltage,
                 ip_rating=di.item.ip_rating,
                 uom=di.item.uom,
                 purchase_rate=di.item.purchase_rate,
                 sale_rate=di.item.sale_rate,
+            )
+        else:
+            # DATA SELF-HEALING: If item record is missing (e.g. legacy/corrupt), 
+            # we use 'notes' as the primary descriptive field to avoid "Unknown" errors.
+            item_brief = ItemBrief(
+                id=di.item_id,
+                brand_name="Generic",
+                scat_name=di.notes or f"Manual Item ({di.item_id})",
+                uom="units"
             )
         
         items_enriched.append(
@@ -129,6 +143,7 @@ def _enrich(
             SelectedVendorResponse(
                 id=row.id,
                 purchase_demand_id=row.purchase_demand_id,
+                purchase_demand_item_id=row.purchase_demand_item_id,
                 vendor_id=row.vendor_id,
                 vendor_name=row.vendor.name if row.vendor else None,
             )
@@ -138,54 +153,9 @@ def _enrich(
     )
 
 
-def _enrich_list_row(demand) -> PurchaseDemandResponse:
-    return PurchaseDemandResponse(
-        id=demand.id,
-        demand_code=demand.demand_code,
-        project_id=demand.project_id,
-        status=demand.status,
-        remarks=demand.remarks,
-        created_by=demand.created_by,
-        updated_by=demand.updated_by,
-        approved_by=demand.approved_by,
-        approved_at=demand.approved_at,
-        created_at=demand.created_at,
-        updated_at=demand.updated_at,
-        project=(
-            ProjectSummary(
-                id=demand.project.id,
-                project_code=demand.project.project_code,
-                name=demand.project.name,
-            ) if demand.project else None
-        ),
-        created_by_user=(
-            UserSummary(
-                id=demand.creator.id,
-                full_name=demand.creator.full_name,
-                username=demand.creator.username,
-            ) if demand.creator else None
-        ),
-        approved_by_user=(
-            UserSummary(
-                id=demand.approver.id,
-                full_name=demand.approver.full_name,
-                username=demand.approver.username,
-            ) if demand.approver else None
-        ),
-        selected_vendors=[],
-        items=[
-            PurchaseDemandItemResponse(
-                id=di.id,
-                purchase_demand_id=di.purchase_demand_id,
-                item_id=di.item_id,
-                quantity=di.quantity,
-                notes=di.notes,
-                item=None,
-                suggested_vendors=[],
-            )
-            for di in demand.items
-        ],
-    )
+def _enrich_list_row(db: Session, demand) -> PurchaseDemandResponse:
+    # Use the full enrichment for list as well, to support direct approval wizards on Dashboard
+    return _enrich(db, demand, include_suggested_vendors=True, include_selected_vendors=True)
 
 
 def _get_demand_or_404(db: Session, demand_id: int):
@@ -266,7 +236,7 @@ def get_purchase_demands(
         ]
     if current_user.role == "purchaser":
         demands = [d for d in demands if d.created_by == current_user.id]
-    return [_enrich_list_row(d) for d in demands]
+    return [_enrich_list_row(db, d) for d in demands]
 
 
 # ── Detail ────────────────────────────────────────────────────────────────────
@@ -407,6 +377,7 @@ def get_selected_vendors_for_demand(
         SelectedVendorResponse(
             id=row.id,
             purchase_demand_id=row.purchase_demand_id,
+            purchase_demand_item_id=row.purchase_demand_item_id,
             vendor_id=row.vendor_id,
             vendor_name=row.vendor.name if row.vendor else None,
         )
@@ -429,20 +400,21 @@ def select_vendors_for_demand(
         )
 
     try:
-        rows = pd_crud.assign_vendors_to_demand(db, demand=demand, vendor_ids=body.vendor_ids)
+        rows = pd_crud.assign_vendors_to_demand(db, demand=demand, assignments=body.assignments)
     except ValueError as ex:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ex))
 
     log_crud.add_log(
         db,
         demand.project_id,
-        f"Vendors selected for demand {demand.demand_code}: {', '.join(map(str, body.vendor_ids))}",
+        f"Per-item vendors selected for demand {demand.demand_code}",
     )
 
     return [
         SelectedVendorResponse(
             id=row.id,
             purchase_demand_id=row.purchase_demand_id,
+            purchase_demand_item_id=row.purchase_demand_item_id,
             vendor_id=row.vendor_id,
             vendor_name=row.vendor.name if row.vendor else None,
         )
@@ -453,6 +425,7 @@ def select_vendors_for_demand(
 # ── Approve (admin only) ──────────────────────────────────────────────────────
 
 @router.post("/{demand_id}/approve", response_model=PurchaseDemandResponse)
+
 def approve_purchase_demand(
     demand_id: int,
     body: ApproveRequest = ApproveRequest(),
@@ -473,7 +446,12 @@ def approve_purchase_demand(
             detail="Cannot approve an empty purchase demand.",
         )
 
+    # DEBUG: Log vendor assignment count before approval check
+    vendor_count = db.query(pd_crud.PurchaseDemandVendor).filter(pd_crud.PurchaseDemandVendor.purchase_demand_id == demand.id).count()
+    print(f"[DEBUG] Vendor assignments for demand {demand.id}: {vendor_count}")
+
     if not pd_crud.has_selected_vendors_for_demand(db, demand.id):
+        print(f"[DEBUG] No vendor assignments found for demand {demand.id} at approval time.")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Select at least one vendor for this purchase demand before approval.",

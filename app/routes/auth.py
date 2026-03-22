@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_db, get_current_user, is_purchaser_access_enabled
-from app.schemas.auth import LoginRequest, Token, TokenRefresh
+from app.schemas.auth import (
+    LoginRequest, Token, TokenRefresh, 
+    ForgotPasswordRequest, VerifyOTPRequest, ResetPasswordRequest
+)
 from app.schemas.user import ProfileUpdate, UserResponse
 from app.crud import user as user_crud
-from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token
+from app.crud import user_otp as user_otp_crud
+from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token, hash_password
+from app.core.mail import send_otp_email
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -98,3 +103,55 @@ def update_me(
             )
 
     return user_crud.update_user(db, current_user.id, data)
+
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = user_crud.get_user_by_email(db, data.email.lower())
+    if not user:
+        # We don't want to reveal if a user exists or not for security
+        return {"message": "If your email is registered, you will receive an OTP shortly."}
+    
+    otp_record = user_otp_crud.create_otp(db, data.email.lower())
+    send_otp_email(data.email.lower(), otp_record.otp)
+    
+    return {"message": "If your email is registered, you will receive an OTP shortly."}
+
+
+@router.post("/verify-otp")
+def verify_otp(data: VerifyOTPRequest, db: Session = Depends(get_db)):
+    otp_record = user_otp_crud.get_otp(db, data.email.lower(), data.otp)
+    if not otp_record or otp_record.is_expired():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OTP."
+        )
+    
+    return {"message": "OTP verified successfully."}
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    otp_record = user_otp_crud.get_otp(db, data.email.lower(), data.otp)
+    if not otp_record or otp_record.is_expired():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OTP."
+        )
+    
+    user = user_crud.get_user_by_email(db, data.email.lower())
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
+        )
+    
+    # Update password
+    new_hashed_password = hash_password(data.new_password)
+    user.hashed_password = new_hashed_password
+    db.commit()
+    
+    # Delete OTP after successful reset
+    user_otp_crud.delete_otp(db, data.email.lower())
+    
+    return {"message": "Password reset successfully."}

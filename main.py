@@ -6,7 +6,7 @@ from app.db.database import engine, Base
 from app.models import (
     Location, Brand, Category, SubCategory, Item,
     Vendor, VendorGroup, VendorBrand, VendorContactPerson, User, SystemSetting,
-    Project, PurchaseDemand, PurchaseDemandItem, PurchaseDemandVendor, Log,
+    Project, PurchaseDemand, PurchaseDemandItem, PurchaseDemandVendor, PurchaseQuotation, Log,
 )
 
 from app.routes import (
@@ -20,7 +20,8 @@ from app.routes import (
     vendor_brand,
     vendor_contact_person
 )
-from app.routes import auth, user, dashboard, system_setting, project, purchase_demand
+from app.routes import auth, user, dashboard, system_setting, project, purchase_demand, purchase_quotation
+from app.routes import ai_chat
 
 app = FastAPI(
     title="ETSolar ERP API",
@@ -85,3 +86,5 @@ app.include_router(vendor_brand.router)
 app.include_router(vendor_contact_person.router)
 app.include_router(project.router)
 app.include_router(purchase_demand.router)
+app.include_router(purchase_quotation.router)
+app.include_router(ai_chat.router)
