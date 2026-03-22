@@ -400,7 +400,7 @@ def select_vendors_for_demand(
         )
 
     try:
-        rows = pd_crud.assign_vendors_to_demand(db, demand=demand, assignments=body.assignments)
+        rows = pd_crud.assign_vendors_to_demand(db, demand=demand, assignments=body.assignments, selected_by=current_user.id)
     except ValueError as ex:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ex))
 

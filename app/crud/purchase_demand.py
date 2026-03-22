@@ -382,6 +382,7 @@ def assign_vendors_to_demand(
     db: Session,
     demand: PurchaseDemand,
     assignments: list, # List of PurchaseDemandItemVendorAssign objects (schemas)
+    selected_by: int = None
 ) -> list[PurchaseDemandVendor]:
     """Replace the selected-vendor list for a demand with per-item assignments."""
     demand_col = _purchase_demand_vendor_has_demand_column(db)
@@ -426,6 +427,8 @@ def assign_vendors_to_demand(
                 "purchase_demand_item_id": item_id,
                 "vendor_id": v_id,
             }
+            if selected_by is not None:
+                row_kwargs["selected_by"] = selected_by
             row = PurchaseDemandVendor(**row_kwargs)
             db.add(row)
             new_rows.append(row)

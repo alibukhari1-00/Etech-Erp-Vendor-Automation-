@@ -10,6 +10,7 @@ class PurchaseDemandVendor(Base):
     purchase_demand_id = Column(Integer, ForeignKey("purchase_demands.id"), nullable=False)
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=False)
     purchase_demand_item_id = Column(Integer, ForeignKey("purchase_demand_items.id"), nullable=True)
+    selected_by = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     __table_args__ = (
         UniqueConstraint(
@@ -23,3 +24,4 @@ class PurchaseDemandVendor(Base):
     demand = relationship("PurchaseDemand", back_populates="selected_vendors")
     vendor = relationship("Vendor")
     item = relationship("PurchaseDemandItem")
+    selector = relationship("User")
