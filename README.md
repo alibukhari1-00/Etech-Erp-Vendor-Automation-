@@ -1,84 +1,115 @@
-# ETSolar ERP — FAST API Based Backend
+# ETSolar ERP — NestJS Backend
 
-Enterprise Resource Planning API for ETSolar, built with **FastAPI** and **PostgreSQL**.
+Production-grade NestJS rewrite of the FastAPI backend. **Zero breaking changes** — the frontend works without modification.
 
-## Tech Stack
+## Stack
 
-| Layer       | Technology                    |
-| ----------- | ----------------------------- |
-| Framework   | FastAPI 0.135                 |
-| Database    | PostgreSQL (via SQLAlchemy 2) |
-| Auth        | JWT (python-jose + bcrypt)    |
-| Validation  | Pydantic v2                   |
-| Migrations  | Alembic                       |
+- **NestJS** (TypeScript)
+- **TypeORM** + **PostgreSQL** (existing schema, `synchronize: false`)
+- **Passport JWT** (HS256, access + refresh tokens)
+- **bcrypt** password hashing
+- **nodemailer** SMTP for OTP emails
+- **class-validator / class-transformer** DTO validation
 
-## Project Structure
+## Setup
 
-```
-backend/
-├── main.py                  # App entrypoint & router registration
-├── requirements.txt         # Pinned dependencies
-├── .env.example             # Environment variable template
-├── scripts/                 # CLI utilities (seed, clear, test connection)
-│   ├── seed.py
-│   ├── clear_db.py
-│   └── test_db.py
-└── app/
-    ├── core/                # Config, security, auth dependencies
-    │   ├── config.py
-    │   ├── security.py
-    │   └── dependencies.py
-    ├── db/                  # Database engine & session
-    │   ├── base.py
-    │   └── database.py
-    ├── models/              # SQLAlchemy ORM models
-    ├── schemas/             # Pydantic request / response schemas
-    ├── crud/                # Database query logic
-    └── routes/              # API route handlers
-```
-
-## Getting Started
-
-### 1. Clone & Install
+### 1. Install dependencies
 
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-pip install -r requirements.txt
+npm install
 ```
 
-### 2. Configure Environment
-
-Copy `.env.example` to `.env` and fill in your values:
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-### 3. Run the Server
+Edit `.env`:
 
-```bash
-uvicorn main:app --reload
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/etsolar_erp
+SECRET_KEY=your-secret-key-change-in-production
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_MINUTES=10080
+OPENAI_API_KEY=sk-...          # optional, for AI chat
+SMTP_HOST=smtp.gmail.com
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=your-app-password
+PORT=8000
 ```
 
-API docs available at **http://localhost:8000/docs**
-
-### 4. Seed the Database (optional)
+### 3. Run
 
 ```bash
-python -m scripts.seed
+# Development (watch mode)
+npm run start:dev
+
+# Production build
+npm run build
+npm run start:prod
 ```
 
-### 5. Clear the Database (optional)
+The API starts on **http://localhost:8000** — same port as the FastAPI backend.
 
-```bash
-python -m scripts.clear_db               # Truncate (keep schema)
-python -m scripts.clear_db --drop-tables  # Drop everything
+## API Routes (identical to FastAPI)
+
+| Module | Routes |
+|---|---|
+| Auth | `POST /auth/login`, `POST /auth/refresh`, `GET/PUT/PATCH /auth/me`, `POST /auth/forgot-password`, `POST /auth/verify-otp`, `POST /auth/reset-password` |
+| Users | `GET/POST /users/`, `GET/PUT/DELETE /users/:id` |
+| Dashboard | `GET /dashboard/stats` |
+| Settings | `GET/PUT /settings/purchaser-access` |
+| Brands | `GET/POST /brands/`, `GET/PUT/DELETE /brands/:id` |
+| Locations | `GET/POST /locations/`, `GET/PUT/DELETE /locations/:id` |
+| Categories | `GET/POST /categories/`, `GET/PUT/DELETE /categories/:id` |
+| SubCategories | `GET/POST /subcategories/`, `GET/PUT/DELETE /subcategories/:id` |
+| Items | `GET/POST /items/`, `GET /items/search`, `GET /items/:id/vendors`, `GET/PUT/DELETE /items/:id` |
+| Vendors | `GET/POST /vendors/`, `GET/PUT/DELETE /vendors/:id` |
+| Vendor Groups | `GET/POST /vendor-groups/`, `DELETE /vendor-groups/:id` |
+| Vendor Brands | `GET/POST /vendor-brands/`, `DELETE /vendor-brands/:id` |
+| Vendor Contacts | `GET/POST /vendor-contacts/`, `DELETE /vendor-contacts/:id` |
+| Projects | `GET/POST /projects/`, `GET/PUT /projects/:id`, `DELETE /projects/:id` |
+| Purchase Demands | Full workflow: create, list, get, update, submit, approve, reject, cancel, delete, vendor assignment, quotation candidates |
+| Purchase Quotations | `POST /purchase-quotations/initiate/:demandId`, `GET /purchase-quotations/demand/:demandId`, `PATCH /purchase-quotations/:id`, `POST /purchase-quotations/:id/select` |
+| AI Chat | `POST /ai-chat/ask` (SSE streaming) |
+
+## Architecture
+
+```
+src/
+  config/           # App config (env vars)
+  common/
+    guards/         # JwtAuthGuard, AdminGuard
+    decorators/     # @CurrentUser()
+    filters/        # HttpExceptionFilter (FastAPI-compatible { detail } format)
+    pipes/          # Global ValidationPipe
+  database/
+    entities/       # TypeORM entities (map 1:1 to existing DB tables)
+  modules/
+    auth/           # JWT login, refresh, OTP password reset
+    users/          # Admin user management
+    dashboard/      # Stats aggregation
+    settings/       # Purchaser access toggle
+    brands/         # Brand CRUD
+    locations/      # Location CRUD
+    categories/     # Category CRUD
+    subcategories/  # SubCategory CRUD
+    items/          # Item CRUD + search + vendor lookup
+    vendors/        # Vendor CRUD
+    vendor-groups/  # Vendor ↔ Category links
+    vendor-brands/  # Vendor ↔ Brand links
+    vendor-contacts/# Vendor contact persons
+    projects/       # Project CRUD
+    purchase-demands/  # Full PD workflow
+    purchase-quotations/ # Quotation management
+    ai-chat/        # LangChain SQL agent (SSE streaming)
 ```
 
-### 6. Test Database Connection
+## Key Design Decisions
 
-```bash
-python -m scripts.test_db
-```
+- `synchronize: false` — TypeORM never touches the existing schema
+- Error responses use `{ detail: "..." }` format to match FastAPI exactly
+- JWT strategy validates `type: "access"` claim to prevent refresh token misuse
+- Purchaser access gate is enforced in both JWT strategy and login flow
+- AI chat uses lazy `require()` for LangChain to avoid startup cost when key is absent
