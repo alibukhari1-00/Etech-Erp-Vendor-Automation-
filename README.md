@@ -1,4 +1,4 @@
-# ETSolar ERP — Backend
+# ETSolar ERP — FAST API Based Backend
 
 Enterprise Resource Planning API for ETSolar, built with **FastAPI** and **PostgreSQL**.
 
