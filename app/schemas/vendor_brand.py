@@ -19,11 +19,6 @@ class VendorBrandBase(BaseModel):
             raise ValueError("vendor_id must be a positive integer.")
         return v
 
-    @model_validator(mode="after")
-    def validate_ids_not_equal(self) -> "VendorBrandBase":
-        if self.brand_id == self.vendor_id:
-            raise ValueError("brand_id and vendor_id cannot be the same value.")
-        return self
 
 
 class VendorBrandCreate(VendorBrandBase):

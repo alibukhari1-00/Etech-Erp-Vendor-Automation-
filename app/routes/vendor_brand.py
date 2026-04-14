@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.core.dependencies import get_db
 from app.schemas.vendor_brand import VendorBrandCreate, VendorBrandResponse
 from app.crud import vendor_brand as crud
 

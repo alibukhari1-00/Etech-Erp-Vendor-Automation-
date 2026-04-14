@@ -3,8 +3,8 @@ from typing import Optional
 import re
 
 
-VALID_TYPES = {"supplier", "manufacturer", "distributor", "retailer", "wholesaler"}
-VALID_SOURCES = {"referral", "online", "cold_call", "exhibition", "social_media", "other"}
+VALID_TYPES = {"Importer", "Trader", "WholeSeller", "EPC", "Installer", "Shopkeeper", "Manufacturer"}
+VALID_SOURCES = {"Whatsapp", "Email", "Call", "Portal", "Personal", "SocialMedia"}
 
 
 class VendorBase(BaseModel):
@@ -98,7 +98,7 @@ class VendorBase(BaseModel):
     def validate_type(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        v = v.strip().lower()
+        v = v.strip()
         if v not in VALID_TYPES:
             raise ValueError(f"Type must be one of: {', '.join(sorted(VALID_TYPES))}.")
         return v
@@ -108,7 +108,7 @@ class VendorBase(BaseModel):
     def validate_source(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        v = v.strip().lower()
+        v = v.strip()
         if v not in VALID_SOURCES:
             raise ValueError(f"Source must be one of: {', '.join(sorted(VALID_SOURCES))}.")
         return v
